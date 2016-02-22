@@ -1,0 +1,71 @@
+package me.gowdru.timeline
+
+import grails.transaction.Transactional
+import groovy.util.logging.Log
+import tweeter.PostBean
+import org.apache.solr.client.solrj.SolrQuery
+import org.apache.solr.client.solrj.SolrServer
+import org.apache.solr.client.solrj.embedded.EmbeddedSolrServer
+import org.apache.solr.core.CoreContainer
+
+import javax.annotation.PostConstruct
+import java.text.DateFormat
+import java.text.SimpleDateFormat
+
+@Log
+@Transactional
+class SolrService implements Closeable {
+
+    def static DateFormat dtFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+    def grailsApplication
+    SolrServer postsServer
+    SolrServer usersServer
+    boolean healthy
+
+    @PostConstruct
+    def init(){
+        log.info("Initializing solr.")
+        def config = grailsApplication.config
+        String solrPath = config?.app?.solr?.path
+        String postsCoreName = config?.app?.solr?.postsCore?:"posts"
+        String usersCoreName = config?.app?.solr?.postsCore?:"users"
+        log.info("Solr Home : ${solrPath}; cores : $postsCoreName $usersCoreName")
+        File solrHome = new File(solrPath)
+        if (!solrHome.exists()) {
+            throw new IllegalStateException("Expected solr home at : ${solrHome.getAbsolutePath()}")
+        }
+        CoreContainer container = CoreContainer.createAndLoad(solrPath, new File(solrHome, "solr.xml"))
+        this.postsServer = new EmbeddedSolrServer(container, postsCoreName)
+        this.usersServer = new EmbeddedSolrServer(container, usersCoreName)
+        log.info("Solr config is okay")
+        this.healthy = true
+    }
+
+    public void index(Collection<PostBean> posts){
+        postsServer.addBeans(posts)
+        postsServer.commit(false, false, true)
+    }
+
+    public void commitPosts(){
+        postsServer.commit()
+    }
+
+    public searchPosts(SolrQuery query) {
+        return postsServer.query(query)
+    }
+
+    @Override
+    void close() throws IOException {
+        if(postsServer) {
+            log.info("shutting down posts server")
+            commitPosts()
+            postsServer.shutdown()
+        }
+        if (usersServer) {
+            log.info("shutting down users server")
+            usersServer.commit()
+            usersServer.shutdown()
+        }
+        this.healthy = false
+    }
+}

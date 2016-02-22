@@ -1,3 +1,4 @@
+
 ---
 grails:
     profile: web
@@ -14,6 +15,10 @@ spring:
             check-template-location: false
 
 ---
+app:
+    solr:
+        path : 'solr-home'
+
 grails:
     mime:
         disable:
